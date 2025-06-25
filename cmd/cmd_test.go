@@ -3,11 +3,17 @@ package cmd
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/Tmunayyer/gocamelpack/deps"
 	"github.com/Tmunayyer/gocamelpack/files"
 )
+
+type copyCall struct {
+	src string
+	dst string
+}
 
 type mockFiles struct {
 	close                     func()
@@ -17,6 +23,10 @@ type mockFiles struct {
 	calledWith                []string
 	readDirectoryFn           func(string) ([]string, error)
 	destinationFromMetadataFn func(files.FileMetadata, string) (string, error)
+	copyFn                    func(string, string) error
+	copyCalledWith            []copyCall
+	ensureDirFn               func(string, os.FileMode) error
+	validateCopyArgsFn        func(string, string) error
 }
 
 func (m *mockFiles) Close() {
@@ -63,6 +73,28 @@ func (m *mockFiles) DestinationFromMetadata(tags files.FileMetadata, base string
 		return m.destinationFromMetadataFn(tags, base)
 	}
 	return "default/path", nil
+}
+
+func (m *mockFiles) Copy(src, dst string) error {
+	m.copyCalledWith = append(m.copyCalledWith, copyCall{src, dst})
+	if m.copyFn != nil {
+		return m.copyFn(src, dst)
+	}
+	return nil
+}
+
+func (m *mockFiles) EnsureDir(path string, perm os.FileMode) error {
+	if m.ensureDirFn != nil {
+		return m.ensureDirFn(path, perm)
+	}
+	return nil
+}
+
+func (m *mockFiles) ValidateCopyArgs(src, dst string) error {
+	if m.validateCopyArgsFn != nil {
+		return m.validateCopyArgsFn(src, dst)
+	}
+	return nil
 }
 
 func TestReadCmd_ValidFile(t *testing.T) {
@@ -123,25 +155,28 @@ func TestCopyCmd(t *testing.T) {
 		readDirErr                error
 		expectErr                 bool
 		expectCalls               []string
+		expectCopySrcs            []string
 		destinationFromMetadataFn func(files.FileMetadata, string) (string, error)
 	}{
 		{
-			name:        "single file input",
-			path:        "singular.txt",
-			isDir:       false,
-			expectErr:   false,
-			expectCalls: []string{"abs/photos/singular.txt"},
+			name:           "single file input",
+			path:           "abs/photos/singular.txt",
+			isDir:          false,
+			expectErr:      false,
+			expectCalls:    []string{"abs/photos/singular.txt"},
+			expectCopySrcs: []string{"abs/photos/singular.txt"},
 			destinationFromMetadataFn: func(tags files.FileMetadata, base string) (string, error) {
 				return fmt.Sprintf("mocked/%s", files.FileMetadata{Filepath: "something/singular.txt"}), nil
 			},
 		},
 		{
-			name:        "empty directory",
-			path:        "mydir",
-			isDir:       true,
-			readDirRes:  []string{},
-			expectErr:   false,
-			expectCalls: []string{},
+			name:           "empty directory",
+			path:           "mydir",
+			isDir:          true,
+			readDirRes:     []string{},
+			expectErr:      false,
+			expectCalls:    []string{},
+			expectCopySrcs: []string{},
 			destinationFromMetadataFn: func(tags files.FileMetadata, base string) (string, error) {
 				return fmt.Sprintf("mocked/%s", files.FileMetadata{Filepath: "something/singular.txt"}), nil
 			},
@@ -153,7 +188,8 @@ func TestCopyCmd(t *testing.T) {
 			readDirRes: []string{"a.png", "b.jpg"},
 			expectErr:  false,
 			// should forward absolute paths of "a.png", "b.jpg"
-			expectCalls: []string{"abs/photos/a.png", "abs/photos/b.jpg"},
+			expectCalls:    []string{"abs/photos/a.png", "abs/photos/b.jpg"},
+			expectCopySrcs: []string{"abs/photos/a.png", "abs/photos/b.jpg"},
 			destinationFromMetadataFn: func(tags files.FileMetadata, base string) (string, error) {
 				return fmt.Sprintf("mocked/%s", files.FileMetadata{Filepath: "something/singular.txt"}), nil
 			},
@@ -209,11 +245,21 @@ func TestCopyCmd(t *testing.T) {
 			if len(mock.calledWith) != len(tc.expectCalls) {
 				t.Fatalf("expected %d calls to GetFileTags, got %d", len(tc.expectCalls), len(mock.calledWith))
 			}
-			// for i, cw := range mock.calledWith {
-			// 	if cw != tc.expectCalls[i] {
-			// 		t.Errorf("call %d: expected %q, got %q", i, tc.expectCalls[i], cw)
-			// 	}
-			// }
+
+			for i, cw := range mock.calledWith {
+				if cw != tc.expectCalls[i] {
+					t.Errorf("call %d: expected %q, got %q", i, tc.expectCalls[i], cw)
+				}
+			}
+
+			if len(mock.copyCalledWith) != len(tc.expectCopySrcs) {
+				t.Fatalf("expected %d calls to Copy, got %d", len(tc.expectCopySrcs), len(mock.copyCalledWith))
+			}
+			for i, call := range mock.copyCalledWith {
+				if call.src != tc.expectCopySrcs[i] {
+					t.Errorf("copy call %d: expected src %q, got %q", i, tc.expectCopySrcs[i], call.src)
+				}
+			}
 		})
 	}
 }
