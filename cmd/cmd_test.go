@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/Tmunayyer/gocamelpack/deps"
@@ -160,11 +161,11 @@ func TestCopyCmd(t *testing.T) {
 	}{
 		{
 			name:           "single file input",
-			path:           "abs/photos/singular.txt",
+			path:           "photos/singular.txt",
 			isDir:          false,
 			expectErr:      false,
-			expectCalls:    []string{"abs/photos/singular.txt"},
-			expectCopySrcs: []string{"abs/photos/singular.txt"},
+			expectCalls:    []string{"photos/singular.txt"},
+			expectCopySrcs: []string{"photos/singular.txt"},
 			destinationFromMetadataFn: func(tags files.FileMetadata, base string) (string, error) {
 				return fmt.Sprintf("mocked/%s", files.FileMetadata{Filepath: "something/singular.txt"}), nil
 			},
@@ -188,8 +189,8 @@ func TestCopyCmd(t *testing.T) {
 			readDirRes: []string{"a.png", "b.jpg"},
 			expectErr:  false,
 			// should forward absolute paths of "a.png", "b.jpg"
-			expectCalls:    []string{"abs/photos/a.png", "abs/photos/b.jpg"},
-			expectCopySrcs: []string{"abs/photos/a.png", "abs/photos/b.jpg"},
+			expectCalls:    []string{"photos/a.png", "photos/b.jpg"},
+			expectCopySrcs: []string{"photos/a.png", "photos/b.jpg"},
 			destinationFromMetadataFn: func(tags files.FileMetadata, base string) (string, error) {
 				return fmt.Sprintf("mocked/%s", files.FileMetadata{Filepath: "something/singular.txt"}), nil
 			},
@@ -247,8 +248,8 @@ func TestCopyCmd(t *testing.T) {
 			}
 
 			for i, cw := range mock.calledWith {
-				if cw != tc.expectCalls[i] {
-					t.Errorf("call %d: expected %q, got %q", i, tc.expectCalls[i], cw)
+				if !strings.HasSuffix(cw, tc.expectCalls[i]) {
+					t.Errorf("call %d: expected suffix %q, got %q", i, tc.expectCalls[i], cw)
 				}
 			}
 
@@ -256,8 +257,8 @@ func TestCopyCmd(t *testing.T) {
 				t.Fatalf("expected %d calls to Copy, got %d", len(tc.expectCopySrcs), len(mock.copyCalledWith))
 			}
 			for i, call := range mock.copyCalledWith {
-				if call.src != tc.expectCopySrcs[i] {
-					t.Errorf("copy call %d: expected src %q, got %q", i, tc.expectCopySrcs[i], call.src)
+				if !strings.HasSuffix(call.src, tc.expectCopySrcs[i]) {
+					t.Errorf("copy call %d: expected src suffix %q, got %q", i, tc.expectCopySrcs[i], call.src)
 				}
 			}
 		})

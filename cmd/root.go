@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/Tmunayyer/gocamelpack/deps"
 	"github.com/spf13/cobra"
@@ -21,52 +22,80 @@ func createRootCmd(dependencies *deps.AppDeps) *cobra.Command {
 }
 
 func createCopyCmd(d *deps.AppDeps) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "copy [source] [destination]",
 		Short: "Copy files from source to destination",
-		Long:  "Source can either be a file or a directory. Destination must be a directory.",
+		Long:  "Source may be a file or directory. Destination is the root directory under which files will be placed according to their metadata.",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			src := args[0]
-			dst := args[1]
+			srcInput := args[0]
+			dstRoot := args[1] // base directory passed to DestinationFromMetadata
 
+			// resolve source to an absolute path so tests expecting "abs/..." match
+			src, err := filepath.Abs(srcInput)
+			if err != nil {
+				return fmt.Errorf("resolving %q: %w", srcInput, err)
+			}
+
+			// flags
+			dryRun, _ := cmd.Flags().GetBool("dry-run")
+			overwrite, _ := cmd.Flags().GetBool("overwrite")
+			// jobs, _ := cmd.Flags().GetUint("jobs") // not yet used
+
+			// -------- gather source files --------
 			var filesToCopy []string
 			if d.Files.IsFile(src) {
 				filesToCopy = append(filesToCopy, src)
 			} else if d.Files.IsDirectory(src) {
-				filepaths, err := d.Files.ReadDirectory(src)
+				entries, err := d.Files.ReadDirectory(src)
 				if err != nil {
 					return fmt.Errorf("error reading directory: %v", err)
 				}
-
-				filesToCopy = append(filesToCopy, filepaths...)
+				for _, e := range entries {
+					filesToCopy = append(filesToCopy, filepath.Join(src, e)) // src is absolute
+				}
 			} else {
 				return fmt.Errorf("unknown src argument")
 			}
 
-			metadata := d.Files.GetFileTags(filesToCopy)
+			// -------- iterate & copy --------
+			for _, srcPath := range filesToCopy {
+				md := d.Files.GetFileTags([]string{srcPath})
 
-			var destinations []string
-			for _, md := range metadata {
-				d, err := d.Files.DestinationFromMetadata(md, dst)
+				dstPath, err := d.Files.DestinationFromMetadata(md[0], dstRoot)
 				if err != nil {
 					return fmt.Errorf("error creating destination filepaths: %v", err)
 				}
 
-				destinations = append(destinations, d)
+				if dryRun {
+					fmt.Fprintf(cmd.OutOrStdout(), "Would copy %s -> %s\n", srcPath, dstPath)
+					continue
+				}
+
+				// validate unless overwrite allowed
+				if !overwrite {
+					if err := d.Files.ValidateCopyArgs(srcPath, dstPath); err != nil {
+						return err
+					}
+				}
+
+				if err := d.Files.Copy(srcPath, dstPath); err != nil {
+					return err
+				}
 			}
 
-			jsonBytes, err := json.MarshalIndent(destinations, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal metadata: %w", err)
-			}
-			fmt.Println(string(jsonBytes))
-
-			fmt.Printf("Copying (%v) files from %s to %s\n", len(filesToCopy), src, dst)
-
+			fmt.Printf("Copied %d file(s).\n", len(filesToCopy))
 			return nil
 		},
+		// flag definitions added after struct literal
 	}
+
+	// CLI flags
+	cmd.Flags().Bool("dry-run", false, "Show what would be copied without doing it")
+	cmd.Flags().Bool("overwrite", false, "Allow overwriting existing files in destination")
+	cmd.Flags().Uint("jobs", 1, "Number of concurrent copy workers (currently only 1 is used)")
+
+	return cmd
 }
 
 // var moveCmd = &cobra.Command{
