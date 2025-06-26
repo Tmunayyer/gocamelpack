@@ -131,8 +131,9 @@ func (f *Files) DestinationFromMetadata(md FileMetadata, baseDir string) (string
 		fmt.Sprintf("%02d", int(month)),
 		fmt.Sprintf("%02d", day),
 	)
-
-	filename := fmt.Sprintf("%s_%s", hour, minute)
+	// Preserve original file extension (including the leading dot).
+	ext := filepath.Ext(md.Filepath)
+	filename := fmt.Sprintf("%s_%s%s", hour, minute, ext)
 
 	return filepath.Join(dir, filename), nil
 }

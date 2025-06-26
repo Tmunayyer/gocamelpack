@@ -51,9 +51,7 @@ func createCopyCmd(d *deps.AppDeps) *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("error reading directory: %v", err)
 				}
-				for _, e := range entries {
-					filesToCopy = append(filesToCopy, filepath.Join(src, e)) // src is absolute
-				}
+				filesToCopy = append(filesToCopy, entries...)
 			} else {
 				return fmt.Errorf("unknown src argument")
 			}

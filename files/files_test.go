@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -117,5 +118,28 @@ func TestDestinationFromMetadata(t *testing.T) {
 	want := filepath.Join(base, "2025", "01", "27", "07_31") // matches helper’s format
 	if got != want {
 		t.Fatalf("path mismatch: got %q want %q", got, want)
+	}
+}
+
+// TestDestinationFromMetadataExtension ensures that the destination path
+// preserves the original file extension exactly (e.g., ".jpg" stays ".jpg").
+func TestDestinationFromMetadataExtension(t *testing.T) {
+	f := newFiles()
+
+	md := FileMetadata{
+		Filepath: "IMG_1234.jpg", // source file including extension
+		Tags: map[string]string{
+			"CreationDate": "2025:06:15 12:34:56-06:00",
+		},
+	}
+
+	base := "/media"
+	dst, err := f.DestinationFromMetadata(md, base)
+	if err != nil {
+		t.Fatalf("DestinationFromMetadata error: %v", err)
+	}
+
+	if !strings.HasSuffix(dst, ".jpg") {
+		t.Fatalf("expected destination to keep .jpg extension, got %q", dst)
 	}
 }

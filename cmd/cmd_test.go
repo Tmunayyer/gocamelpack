@@ -189,8 +189,8 @@ func TestCopyCmd(t *testing.T) {
 			readDirRes: []string{"a.png", "b.jpg"},
 			expectErr:  false,
 			// should forward absolute paths of "a.png", "b.jpg"
-			expectCalls:    []string{"photos/a.png", "photos/b.jpg"},
-			expectCopySrcs: []string{"photos/a.png", "photos/b.jpg"},
+			expectCalls:    []string{"a.png", "b.jpg"},
+			expectCopySrcs: []string{"a.png", "b.jpg"},
 			destinationFromMetadataFn: func(tags files.FileMetadata, base string) (string, error) {
 				return fmt.Sprintf("mocked/%s", files.FileMetadata{Filepath: "something/singular.txt"}), nil
 			},
@@ -201,13 +201,13 @@ func TestCopyCmd(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			mock := &mockFiles{
 				isFileFn: func(p string) bool {
-					return !tc.isDir
+					return !tc.isDir && strings.HasSuffix(p, tc.path)
 				},
 				isDirectoryFn: func(p string) bool {
-					return p == tc.path && tc.isDir
+					return tc.isDir && strings.HasSuffix(p, tc.path)
 				},
 				readDirectoryFn: func(dir string) ([]string, error) {
-					if !tc.isDir || dir != tc.path {
+					if !tc.isDir || !strings.HasSuffix(dir, tc.path) {
 						t.Errorf("unexpected ReadDirectory call: %s", dir)
 					}
 					return tc.readDirRes, tc.readDirErr
