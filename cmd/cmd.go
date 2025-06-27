@@ -30,6 +30,10 @@ func createCopyCmd(d *deps.AppDeps) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			srcInput := args[0]
 			dstRoot := args[1] // base directory passed to DestinationFromMetadata
+			// flags
+			// jobs, _ := cmd.Flags().GetUint("jobs") // not yet used
+			dryRun, _ := cmd.Flags().GetBool("dry-run")
+			overwrite, _ := cmd.Flags().GetBool("overwrite")
 
 			// resolve source to an absolute path so tests expecting "abs/..." match
 			src, err := filepath.Abs(srcInput)
@@ -37,52 +41,33 @@ func createCopyCmd(d *deps.AppDeps) *cobra.Command {
 				return fmt.Errorf("resolving %q: %w", srcInput, err)
 			}
 
-			// flags
-			dryRun, _ := cmd.Flags().GetBool("dry-run")
-			overwrite, _ := cmd.Flags().GetBool("overwrite")
-			// jobs, _ := cmd.Flags().GetUint("jobs") // not yet used
-
-			// -------- gather source files --------
-			var filesToCopy []string
-			if d.Files.IsFile(src) {
-				filesToCopy = append(filesToCopy, src)
-			} else if d.Files.IsDirectory(src) {
-				entries, err := d.Files.ReadDirectory(src)
-				if err != nil {
-					return fmt.Errorf("error reading directory: %v", err)
-				}
-				filesToCopy = append(filesToCopy, entries...)
-			} else {
-				return fmt.Errorf("unknown src argument")
+			sources, err := collectSources(d.Files, src)
+			if err != nil {
+				return err
 			}
 
-			// -------- iterate & copy --------
-			for _, srcPath := range filesToCopy {
-				md := d.Files.GetFileTags([]string{srcPath})
-
-				dstPath, err := d.Files.DestinationFromMetadata(md[0], dstRoot)
+			for _, src := range sources {
+				dst, err := destFromMetadata(d.Files, src, dstRoot)
 				if err != nil {
-					return fmt.Errorf("error creating destination filepaths: %v", err)
+					return err
 				}
 
 				if dryRun {
-					fmt.Fprintf(cmd.OutOrStdout(), "Would copy %s -> %s\n", srcPath, dstPath)
+					fmt.Fprintf(cmd.OutOrStdout(), "Would move %s → %s\n", src, dst)
 					continue
 				}
-
-				// validate unless overwrite allowed
 				if !overwrite {
-					if err := d.Files.ValidateCopyArgs(srcPath, dstPath); err != nil {
+					if err := d.Files.ValidateCopyArgs(src, dst); err != nil {
 						return err
 					}
 				}
-
-				if err := d.Files.Copy(srcPath, dstPath); err != nil {
+				// Move is copy+delete or os.Rename; simplest:
+				if err := d.Files.Copy(src, dst); err != nil {
 					return err
 				}
 			}
 
-			fmt.Printf("Copied %d file(s).\n", len(filesToCopy))
+			fmt.Printf("Copied %d file(s).\n", len(sources))
 			return nil
 		},
 		// flag definitions added after struct literal
