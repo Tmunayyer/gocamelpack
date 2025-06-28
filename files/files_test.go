@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Tmunayyer/gocamelpack/testutil"
 )
 
 // filePermRW represents rw-r--r-- (owner read/write; group and others read-only).
@@ -27,7 +29,7 @@ func newFiles() *Files { return &Files{pr: StdPath{}} }
 // without error and that the resulting leaf is a directory on disk.
 func TestEnsureDir(t *testing.T) {
 	f := newFiles()
-	tmp := t.TempDir()
+	tmp := testutil.TempDir(t)
 
 	nested := filepath.Join(tmp, "a", "b", "c")
 	if err := f.EnsureDir(nested, filePermRW); err != nil {
@@ -43,7 +45,7 @@ func TestEnsureDir(t *testing.T) {
 //   - an existing destination returns an error
 func TestValidateCopyArgs(t *testing.T) {
 	f := newFiles()
-	tmp := t.TempDir()
+	tmp := testutil.TempDir(t)
 
 	// --- happy path ---
 	src := filepath.Join(tmp, "src.txt")
@@ -70,7 +72,7 @@ func TestValidateCopyArgs(t *testing.T) {
 //   - file mode bits are preserved
 func TestCopy(t *testing.T) {
 	f := newFiles()
-	tmp := t.TempDir() // isolated playground
+	tmp := testutil.TempDir(t) // isolated playground
 
 	// ----- arrange -----
 	src := filepath.Join(tmp, "in.bin")
