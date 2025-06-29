@@ -1,2 +1,22 @@
 /resources
 /output
+
+# Build artifacts
+/build/
+gocamelpack
+cover.out
+coverage.html
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Claude context files (uncomment if you want to commit these)
+# .claude/
