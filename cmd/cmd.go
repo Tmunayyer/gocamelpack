@@ -17,11 +17,11 @@ const dirPerm = 0o755
 func createRootCmd(dependencies *deps.AppDeps) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "gocamelpack",
-		Version: Version,
+		Version: Version(),
 		Short:   "gocamelpack is your CLI companion",
 		Long:    fmt.Sprintf(`gocamelpack is a tool to help you move and rename large amounts of files based on file metadata.
 
-Version: %s`, Version),
+Version: %s`, Version()),
 		Run: func(cmd *cobra.Command, args []string) {
 			fmt.Println("Hello from Cobra!")
 		},
