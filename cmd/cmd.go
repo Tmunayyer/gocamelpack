@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/Tmunayyer/gocamelpack/deps"
+	"github.com/Tmunayyer/gocamelpack/files"
 	"github.com/spf13/cobra"
 )
 
@@ -62,6 +63,7 @@ func createCopyCmd(d *deps.AppDeps) *cobra.Command {
 			// jobs, _ := cmd.Flags().GetUint("jobs") // not yet used
 			dryRun, _ := cmd.Flags().GetBool("dry-run")
 			overwrite, _ := cmd.Flags().GetBool("overwrite")
+			atomic, _ := cmd.Flags().GetBool("atomic")
 
 			// resolve source to an absolute path so tests expecting "abs/..." match
 			src, err := filepath.Abs(srcInput)
@@ -74,6 +76,11 @@ func createCopyCmd(d *deps.AppDeps) *cobra.Command {
 				return err
 			}
 
+			if atomic {
+				return performTransactionalCopy(d.Files, sources, dstRoot, dryRun, overwrite, cmd)
+			}
+
+			// Original non-transactional behavior
 			for _, src := range sources {
 				dst, err := destFromMetadata(d.Files, src, dstRoot)
 				if err != nil {
@@ -104,6 +111,7 @@ func createCopyCmd(d *deps.AppDeps) *cobra.Command {
 	// CLI flags
 	cmd.Flags().Bool("dry-run", false, "Show what would be copied without doing it")
 	cmd.Flags().Bool("overwrite", false, "Allow overwriting existing files in destination")
+	cmd.Flags().Bool("atomic", false, "Perform all-or-nothing copy with rollback on failure")
 	cmd.Flags().Uint("jobs", 1, "Number of concurrent copy workers (currently only 1 is used)")
 
 	return cmd
@@ -121,6 +129,7 @@ func createMoveCmd(d *deps.AppDeps) *cobra.Command {
 
 			dryRun, _ := cmd.Flags().GetBool("dry-run")
 			overwrite, _ := cmd.Flags().GetBool("overwrite")
+			atomic, _ := cmd.Flags().GetBool("atomic")
 
 			srcAbs, err := filepath.Abs(srcInput)
 			if err != nil {
@@ -132,6 +141,11 @@ func createMoveCmd(d *deps.AppDeps) *cobra.Command {
 				return err
 			}
 
+			if atomic {
+				return performTransactionalMove(d.Files, sources, dstRoot, dryRun, overwrite, cmd)
+			}
+
+			// Original non-transactional behavior
 			for _, src := range sources {
 				dst, err := destFromMetadata(d.Files, src, dstRoot)
 				if err != nil {
@@ -165,8 +179,87 @@ func createMoveCmd(d *deps.AppDeps) *cobra.Command {
 
 	cmd.Flags().Bool("dry-run", false, "Show what would be moved without doing it")
 	cmd.Flags().Bool("overwrite", false, "Allow overwriting existing files in destination")
+	cmd.Flags().Bool("atomic", false, "Perform all-or-nothing move with rollback on failure")
 
 	return cmd
+}
+
+// performTransactionalCopy handles atomic copy operations using transactions.
+func performTransactionalCopy(fs files.FilesService, sources []string, dstRoot string, dryRun, overwrite bool, cmd *cobra.Command) error {
+	// Create a new transaction
+	tx := fs.NewTransaction(overwrite)
+	
+	// Plan all operations
+	for _, src := range sources {
+		dst, err := destFromMetadata(fs, src, dstRoot)
+		if err != nil {
+			return err
+		}
+		
+		if err := tx.AddCopy(src, dst); err != nil {
+			return err
+		}
+	}
+	
+	// Validate all operations
+	if err := tx.Validate(); err != nil {
+		return err
+	}
+	
+	// Handle dry-run mode
+	if dryRun {
+		for _, op := range tx.Operations() {
+			fmt.Fprintf(cmd.OutOrStdout(), "Would copy %s → %s\n", op.Source(), op.Destination())
+		}
+		return nil
+	}
+	
+	// Execute the transaction
+	if err := tx.Execute(); err != nil {
+		return err
+	}
+	
+	fmt.Printf("Atomically copied %d file(s).\n", len(sources))
+	return nil
+}
+
+// performTransactionalMove handles atomic move operations using transactions.
+func performTransactionalMove(fs files.FilesService, sources []string, dstRoot string, dryRun, overwrite bool, cmd *cobra.Command) error {
+	// Create a new transaction
+	tx := fs.NewTransaction(overwrite)
+	
+	// Plan all operations
+	for _, src := range sources {
+		dst, err := destFromMetadata(fs, src, dstRoot)
+		if err != nil {
+			return err
+		}
+		
+		if err := tx.AddMove(src, dst); err != nil {
+			return err
+		}
+	}
+	
+	// Validate all operations
+	if err := tx.Validate(); err != nil {
+		return err
+	}
+	
+	// Handle dry-run mode
+	if dryRun {
+		for _, op := range tx.Operations() {
+			fmt.Fprintf(cmd.OutOrStdout(), "Would move %s → %s\n", op.Source(), op.Destination())
+		}
+		return nil
+	}
+	
+	// Execute the transaction
+	if err := tx.Execute(); err != nil {
+		return err
+	}
+	
+	fmt.Printf("Atomically moved %d file(s).\n", len(sources))
+	return nil
 }
 
 func Execute(dependencies *deps.AppDeps) {

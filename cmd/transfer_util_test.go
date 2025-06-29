@@ -30,6 +30,9 @@ func (m utilMock) GetFileTags(ps []string) []files.FileMetadata { return m.getTa
 func (m utilMock) DestinationFromMetadata(md files.FileMetadata, base string) (string, error) {
 	return m.destFromMeta(md, base)
 }
+func (m utilMock) NewTransaction(overwrite bool) files.Transaction {
+	return files.NewTransaction(m, overwrite)
+}
 
 // -----------------------------------------------------------
 
