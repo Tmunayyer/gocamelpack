@@ -74,7 +74,7 @@ deps/     - Thin wiring between CLI and services
 ## Roadmap / TODOs
 
 - [x] A solid testing setup to be confident whats going to happen to the files.
-- [ ] An option for all or nothing copy, with graceful failure and cleanup.
+- [x] An option for all or nothing copy, with graceful failure and cleanup.
 - [ ] Progress indicator during copies.
 - [ ] Signal (Ctrl‑C) cancellation with cleanup.
 - [ ] Optional checksum verification (`--verify-sha256`).
