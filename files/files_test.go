@@ -32,7 +32,7 @@ func TestEnsureDir(t *testing.T) {
 	tmp := testutil.TempDir(t)
 
 	nested := filepath.Join(tmp, "a", "b", "c")
-	if err := f.EnsureDir(nested, filePermRW); err != nil {
+	if err := f.EnsureDir(nested, 0o755); err != nil {
 		t.Fatalf("EnsureDir returned error: %v", err)
 	}
 	if st, err := os.Stat(nested); err != nil || !st.IsDir() {
