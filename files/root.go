@@ -27,6 +27,7 @@ type FilesService interface {
 	Copy(src, dst string) error
 	EnsureDir(path string, perm os.FileMode) error
 	ValidateCopyArgs(src, dst string) error
+	NewTransaction(overwrite bool) Transaction
 }
 
 type Files struct {
@@ -216,4 +217,9 @@ func (f *Files) Copy(src, dst string) error {
 	}
 
 	return out.Close()
+}
+
+// NewTransaction creates a new transaction for atomic file operations.
+func (f *Files) NewTransaction(overwrite bool) Transaction {
+	return NewTransaction(f, overwrite)
 }

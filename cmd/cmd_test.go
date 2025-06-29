@@ -149,6 +149,10 @@ func (t *testFilesService) ValidateCopyArgs(src, dst string) error {
 	return nil
 }
 
+func (t *testFilesService) NewTransaction(overwrite bool) files.Transaction {
+	return files.NewTransaction(t, overwrite)
+}
+
 func TestReadCmd_ValidFile(t *testing.T) {
 	tempDir := testutil.TempDir(t)
 
