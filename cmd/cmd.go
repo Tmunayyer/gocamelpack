@@ -15,14 +15,22 @@ import (
 const dirPerm = 0o755
 
 func createRootCmd(dependencies *deps.AppDeps) *cobra.Command {
-	return &cobra.Command{
-		Use:   "gocamelpack",
-		Short: "gocamelpack is your CLI companion",
-		Long:  `gocamelpack is a tool to help you move and rename large amounts of files based on file metadata.`,
+	cmd := &cobra.Command{
+		Use:     "gocamelpack",
+		Version: Version,
+		Short:   "gocamelpack is your CLI companion",
+		Long:    fmt.Sprintf(`gocamelpack is a tool to help you move and rename large amounts of files based on file metadata.
+
+Version: %s`, Version),
 		Run: func(cmd *cobra.Command, args []string) {
 			fmt.Println("Hello from Cobra!")
 		},
 	}
+	
+	// Add custom version template that shows detailed build info
+	cmd.SetVersionTemplate(BuildInfo() + "\n")
+	
+	return cmd
 }
 
 func createReadCmd(d *deps.AppDeps) *cobra.Command {
@@ -147,6 +155,7 @@ func createMoveCmd(d *deps.AppDeps) *cobra.Command {
 
 			// Original non-transactional behavior
 			for _, src := range sources {
+				fmt.Printf("the src: %v+", src)
 				dst, err := destFromMetadata(d.Files, src, dstRoot)
 				if err != nil {
 					return err
@@ -188,24 +197,24 @@ func createMoveCmd(d *deps.AppDeps) *cobra.Command {
 func performTransactionalCopy(fs files.FilesService, sources []string, dstRoot string, dryRun, overwrite bool, cmd *cobra.Command) error {
 	// Create a new transaction
 	tx := fs.NewTransaction(overwrite)
-	
+
 	// Plan all operations
 	for _, src := range sources {
 		dst, err := destFromMetadata(fs, src, dstRoot)
 		if err != nil {
 			return err
 		}
-		
+
 		if err := tx.AddCopy(src, dst); err != nil {
 			return err
 		}
 	}
-	
+
 	// Validate all operations
 	if err := tx.Validate(); err != nil {
 		return err
 	}
-	
+
 	// Handle dry-run mode
 	if dryRun {
 		for _, op := range tx.Operations() {
@@ -213,12 +222,12 @@ func performTransactionalCopy(fs files.FilesService, sources []string, dstRoot s
 		}
 		return nil
 	}
-	
+
 	// Execute the transaction
 	if err := tx.Execute(); err != nil {
 		return err
 	}
-	
+
 	fmt.Printf("Atomically copied %d file(s).\n", len(sources))
 	return nil
 }
@@ -227,24 +236,24 @@ func performTransactionalCopy(fs files.FilesService, sources []string, dstRoot s
 func performTransactionalMove(fs files.FilesService, sources []string, dstRoot string, dryRun, overwrite bool, cmd *cobra.Command) error {
 	// Create a new transaction
 	tx := fs.NewTransaction(overwrite)
-	
+
 	// Plan all operations
 	for _, src := range sources {
 		dst, err := destFromMetadata(fs, src, dstRoot)
 		if err != nil {
 			return err
 		}
-		
+
 		if err := tx.AddMove(src, dst); err != nil {
 			return err
 		}
 	}
-	
+
 	// Validate all operations
 	if err := tx.Validate(); err != nil {
 		return err
 	}
-	
+
 	// Handle dry-run mode
 	if dryRun {
 		for _, op := range tx.Operations() {
@@ -252,12 +261,12 @@ func performTransactionalMove(fs files.FilesService, sources []string, dstRoot s
 		}
 		return nil
 	}
-	
+
 	// Execute the transaction
 	if err := tx.Execute(); err != nil {
 		return err
 	}
-	
+
 	fmt.Printf("Atomically moved %d file(s).\n", len(sources))
 	return nil
 }
