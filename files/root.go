@@ -94,11 +94,7 @@ func (f *Files) ReadDirectory(dirPath string) ([]string, error) {
 	var filePaths []string
 	for _, entry := range entries {
 		if !entry.IsDir() {
-			absPath, err := f.pr.Abs(f.pr.Join(dirPath, entry.Name()))
-			if err != nil {
-				return nil, fmt.Errorf("failed to get absolute path: %w", err)
-			}
-			filePaths = append(filePaths, absPath)
+			filePaths = append(filePaths, entry.Name())
 		}
 	}
 
