@@ -1,6 +1,10 @@
 package files
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/Tmunayyer/gocamelpack/progress"
+)
 
 // OperationType represents the type of file operation in a transaction.
 type OperationType int
@@ -64,6 +68,10 @@ type Transaction interface {
 	// Execute performs all planned operations atomically.
 	// If any operation fails, all completed operations are rolled back.
 	Execute() error
+	
+	// ExecuteWithProgress performs all planned operations atomically with progress reporting.
+	// If any operation fails, all completed operations are rolled back.
+	ExecuteWithProgress(reporter progress.ProgressReporter) error
 	
 	// Rollback undoes all completed operations in reverse order.
 	// This is called automatically by Execute on failure.
