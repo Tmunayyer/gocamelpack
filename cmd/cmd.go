@@ -8,6 +8,7 @@ import (
 
 	"github.com/Tmunayyer/gocamelpack/deps"
 	"github.com/Tmunayyer/gocamelpack/files"
+	"github.com/Tmunayyer/gocamelpack/progress"
 	"github.com/spf13/cobra"
 )
 
@@ -88,30 +89,8 @@ func createCopyCmd(d *deps.AppDeps) *cobra.Command {
 				return performTransactionalCopy(d.Files, sources, dstRoot, dryRun, overwrite, cmd)
 			}
 
-			// Original non-transactional behavior
-			for _, src := range sources {
-				dst, err := destFromMetadata(d.Files, src, dstRoot)
-				if err != nil {
-					return err
-				}
-
-				if dryRun {
-					fmt.Fprintf(cmd.OutOrStdout(), "Would move %s → %s\n", src, dst)
-					continue
-				}
-				if !overwrite {
-					if err := d.Files.ValidateCopyArgs(src, dst); err != nil {
-						return err
-					}
-				}
-				// Move is copy+delete or os.Rename; simplest:
-				if err := d.Files.Copy(src, dst); err != nil {
-					return err
-				}
-			}
-
-			fmt.Printf("Copied %d file(s).\n", len(sources))
-			return nil
+			// Original non-transactional behavior with progress
+			return performNonTransactionalCopy(d.Files, sources, dstRoot, dryRun, overwrite, cmd)
 		},
 		// flag definitions added after struct literal
 	}
@@ -153,36 +132,8 @@ func createMoveCmd(d *deps.AppDeps) *cobra.Command {
 				return performTransactionalMove(d.Files, sources, dstRoot, dryRun, overwrite, cmd)
 			}
 
-			// Original non-transactional behavior
-			for _, src := range sources {
-				fmt.Printf("the src: %v+", src)
-				dst, err := destFromMetadata(d.Files, src, dstRoot)
-				if err != nil {
-					return err
-				}
-
-				if dryRun {
-					fmt.Fprintf(cmd.OutOrStdout(), "Would move %s -> %s\n", src, dst)
-					continue
-				}
-				// Validate unless overwrite flag is set
-				if !overwrite {
-					if err := d.Files.ValidateCopyArgs(src, dst); err != nil {
-						return err
-					}
-				}
-				// Ensure destination directory exists
-				if err := d.Files.EnsureDir(filepath.Dir(dst), dirPerm); err != nil {
-					return err
-				}
-				// Perform the move (rename)
-				if err := os.Rename(src, dst); err != nil {
-					return err
-				}
-			}
-
-			fmt.Printf("Moved %d file(s).\n", len(sources))
-			return nil
+			// Original non-transactional behavior with progress
+			return performNonTransactionalMove(d.Files, sources, dstRoot, dryRun, overwrite, cmd)
 		},
 	}
 
@@ -268,6 +219,89 @@ func performTransactionalMove(fs files.FilesService, sources []string, dstRoot s
 	}
 
 	fmt.Printf("Atomically moved %d file(s).\n", len(sources))
+	return nil
+}
+
+// performNonTransactionalCopy handles non-atomic copy operations with progress reporting.
+func performNonTransactionalCopy(fs files.FilesService, sources []string, dstRoot string, dryRun, overwrite bool, cmd *cobra.Command) error {
+	// Create progress reporter (no-op for now, will be configurable later)
+	reporter := progress.NewNoOpReporter()
+	reporter.SetTotal(len(sources))
+	
+	for i, src := range sources {
+		dst, err := destFromMetadata(fs, src, dstRoot)
+		if err != nil {
+			return err
+		}
+		
+		reporter.SetMessage(fmt.Sprintf("copy %s", src))
+		
+		if dryRun {
+			fmt.Fprintf(cmd.OutOrStdout(), "Would copy %s → %s\n", src, dst)
+			reporter.Increment()
+			continue
+		}
+		
+		if !overwrite {
+			if err := fs.ValidateCopyArgs(src, dst); err != nil {
+				return err
+			}
+		}
+		
+		if err := fs.Copy(src, dst); err != nil {
+			return err
+		}
+		
+		reporter.SetCurrent(i + 1)
+	}
+	
+	reporter.Finish()
+	fmt.Printf("Copied %d file(s).\n", len(sources))
+	return nil
+}
+
+// performNonTransactionalMove handles non-atomic move operations with progress reporting.
+func performNonTransactionalMove(fs files.FilesService, sources []string, dstRoot string, dryRun, overwrite bool, cmd *cobra.Command) error {
+	// Create progress reporter (no-op for now, will be configurable later)
+	reporter := progress.NewNoOpReporter()
+	reporter.SetTotal(len(sources))
+	
+	for i, src := range sources {
+		dst, err := destFromMetadata(fs, src, dstRoot)
+		if err != nil {
+			return err
+		}
+		
+		reporter.SetMessage(fmt.Sprintf("move %s", src))
+		
+		if dryRun {
+			fmt.Fprintf(cmd.OutOrStdout(), "Would move %s → %s\n", src, dst)
+			reporter.Increment()
+			continue
+		}
+		
+		// Validate unless overwrite flag is set
+		if !overwrite {
+			if err := fs.ValidateCopyArgs(src, dst); err != nil {
+				return err
+			}
+		}
+		
+		// Ensure destination directory exists
+		if err := fs.EnsureDir(filepath.Dir(dst), dirPerm); err != nil {
+			return err
+		}
+		
+		// Perform the move (rename)
+		if err := os.Rename(src, dst); err != nil {
+			return err
+		}
+		
+		reporter.SetCurrent(i + 1)
+	}
+	
+	reporter.Finish()
+	fmt.Printf("Moved %d file(s).\n", len(sources))
 	return nil
 }
 
