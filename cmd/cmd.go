@@ -81,7 +81,14 @@ func createCopyCmd(d *deps.AppDeps) *cobra.Command {
 				return fmt.Errorf("resolving %q: %w", srcInput, err)
 			}
 
-			sources, err := collectSources(d.Files, src)
+			var sources []string
+			if showProgress {
+				// Show collection progress 
+				collectionReporter := progress.NewSimpleProgressBar(cmd.ErrOrStderr())
+				sources, err = collectSourcesWithProgress(d.Files, src, collectionReporter)
+			} else {
+				sources, err = collectSources(d.Files, src)
+			}
 			if err != nil {
 				return err
 			}
@@ -126,7 +133,14 @@ func createMoveCmd(d *deps.AppDeps) *cobra.Command {
 				return fmt.Errorf("resolving %q: %w", srcInput, err)
 			}
 
-			sources, err := collectSources(d.Files, srcAbs)
+			var sources []string
+			if showProgress {
+				// Show collection progress
+				collectionReporter := progress.NewSimpleProgressBar(cmd.ErrOrStderr())
+				sources, err = collectSourcesWithProgress(d.Files, srcAbs, collectionReporter)
+			} else {
+				sources, err = collectSources(d.Files, srcAbs)
+			}
 			if err != nil {
 				return err
 			}
@@ -153,8 +167,18 @@ func performTransactionalCopy(fs files.FilesService, sources []string, dstRoot s
 	// Create a new transaction
 	tx := fs.NewTransaction(overwrite)
 
-	// Plan all operations
-	for _, src := range sources {
+	// Plan all operations with optional progress for metadata extraction
+	var planningReporter progress.ProgressReporter
+	if showProgress {
+		planningReporter = progress.NewSimpleProgressBar(cmd.ErrOrStderr())
+		planningReporter.SetTotal(len(sources))
+		planningReporter.SetMessage("Planning operations")
+	} else {
+		planningReporter = progress.NewNoOpReporter()
+	}
+
+	for i, src := range sources {
+		planningReporter.SetMessage(fmt.Sprintf("Planning copy for %s", src))
 		dst, err := destFromMetadata(fs, src, dstRoot)
 		if err != nil {
 			return err
@@ -163,7 +187,9 @@ func performTransactionalCopy(fs files.FilesService, sources []string, dstRoot s
 		if err := tx.AddCopy(src, dst); err != nil {
 			return err
 		}
+		planningReporter.SetCurrent(i + 1)
 	}
+	planningReporter.Finish()
 
 	// Validate all operations
 	if err := tx.Validate(); err != nil {
@@ -199,8 +225,18 @@ func performTransactionalMove(fs files.FilesService, sources []string, dstRoot s
 	// Create a new transaction
 	tx := fs.NewTransaction(overwrite)
 
-	// Plan all operations
-	for _, src := range sources {
+	// Plan all operations with optional progress for metadata extraction
+	var planningReporter progress.ProgressReporter
+	if showProgress {
+		planningReporter = progress.NewSimpleProgressBar(cmd.ErrOrStderr())
+		planningReporter.SetTotal(len(sources))
+		planningReporter.SetMessage("Planning operations")
+	} else {
+		planningReporter = progress.NewNoOpReporter()
+	}
+
+	for i, src := range sources {
+		planningReporter.SetMessage(fmt.Sprintf("Planning move for %s", src))
 		dst, err := destFromMetadata(fs, src, dstRoot)
 		if err != nil {
 			return err
@@ -209,7 +245,9 @@ func performTransactionalMove(fs files.FilesService, sources []string, dstRoot s
 		if err := tx.AddMove(src, dst); err != nil {
 			return err
 		}
+		planningReporter.SetCurrent(i + 1)
 	}
+	planningReporter.Finish()
 
 	// Validate all operations
 	if err := tx.Validate(); err != nil {
