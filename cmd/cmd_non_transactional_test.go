@@ -96,7 +96,7 @@ func TestPerformNonTransactionalCopy_Success(t *testing.T) {
 	buf := &bytes.Buffer{}
 	cmd.SetOut(buf)
 
-	err := performNonTransactionalCopy(mockFS, sources, dstRoot, false, false, cmd)
+	err := performNonTransactionalCopy(mockFS, sources, dstRoot, false, false, false, cmd)
 	if err != nil {
 		t.Fatalf("performNonTransactionalCopy failed: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestPerformNonTransactionalCopy_DryRun(t *testing.T) {
 	buf := &bytes.Buffer{}
 	cmd.SetOut(buf)
 
-	err := performNonTransactionalCopy(mockFS, sources, dstRoot, true, false, cmd)
+	err := performNonTransactionalCopy(mockFS, sources, dstRoot, true, false, false, cmd)
 	if err != nil {
 		t.Fatalf("performNonTransactionalCopy dry-run failed: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestPerformNonTransactionalCopy_ValidationError(t *testing.T) {
 
 	cmd := &cobra.Command{}
 
-	err := performNonTransactionalCopy(mockFS, sources, dstRoot, false, false, cmd)
+	err := performNonTransactionalCopy(mockFS, sources, dstRoot, false, false, false, cmd)
 	if err == nil {
 		t.Fatal("Expected performNonTransactionalCopy to fail with validation error")
 	}
@@ -174,7 +174,7 @@ func TestPerformNonTransactionalMove_Success(t *testing.T) {
 	// Note: This test will actually try to call os.Rename, which will fail
 	// because the files don't exist. In a real scenario, we'd need a more
 	// sophisticated mock or integration test with real files.
-	err := performNonTransactionalMove(mockFS, sources, dstRoot, false, false, cmd)
+	err := performNonTransactionalMove(mockFS, sources, dstRoot, false, false, false, cmd)
 	
 	// We expect this to fail because os.Rename tries to move real files
 	if err == nil {
@@ -192,7 +192,7 @@ func TestPerformNonTransactionalMove_DryRun(t *testing.T) {
 	buf := &bytes.Buffer{}
 	cmd.SetOut(buf)
 
-	err := performNonTransactionalMove(mockFS, sources, dstRoot, true, false, cmd)
+	err := performNonTransactionalMove(mockFS, sources, dstRoot, true, false, false, cmd)
 	if err != nil {
 		t.Fatalf("performNonTransactionalMove dry-run failed: %v", err)
 	}
@@ -222,7 +222,7 @@ func TestPerformNonTransactionalCopy_WithProgressReporter(t *testing.T) {
 
 	// Test that the function completes without error
 	// (Progress reporting is currently using NoOpReporter)
-	err := performNonTransactionalCopy(mockFS, sources, dstRoot, false, false, cmd)
+	err := performNonTransactionalCopy(mockFS, sources, dstRoot, false, false, false, cmd)
 	if err != nil {
 		t.Fatalf("performNonTransactionalCopy with progress failed: %v", err)
 	}
@@ -246,7 +246,7 @@ func TestPerformNonTransactionalMove_WithProgressReporter(t *testing.T) {
 	cmd.SetOut(buf)
 
 	// Test dry-run mode (to avoid os.Rename complications)
-	err := performNonTransactionalMove(mockFS, sources, dstRoot, true, false, cmd)
+	err := performNonTransactionalMove(mockFS, sources, dstRoot, true, false, false, cmd)
 	if err != nil {
 		t.Fatalf("performNonTransactionalMove dry-run with progress failed: %v", err)
 	}
