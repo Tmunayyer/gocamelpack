@@ -8,6 +8,7 @@ import (
 
 	"github.com/Tmunayyer/gocamelpack/deps"
 	"github.com/Tmunayyer/gocamelpack/files"
+	"github.com/Tmunayyer/gocamelpack/progress"
 	"github.com/spf13/cobra"
 )
 
@@ -72,6 +73,7 @@ func createCopyCmd(d *deps.AppDeps) *cobra.Command {
 			dryRun, _ := cmd.Flags().GetBool("dry-run")
 			overwrite, _ := cmd.Flags().GetBool("overwrite")
 			atomic, _ := cmd.Flags().GetBool("atomic")
+			showProgress, _ := cmd.Flags().GetBool("progress")
 
 			// resolve source to an absolute path so tests expecting "abs/..." match
 			src, err := filepath.Abs(srcInput)
@@ -79,39 +81,24 @@ func createCopyCmd(d *deps.AppDeps) *cobra.Command {
 				return fmt.Errorf("resolving %q: %w", srcInput, err)
 			}
 
-			sources, err := collectSources(d.Files, src)
+			var sources []string
+			if showProgress {
+				// Show collection progress 
+				collectionReporter := progress.NewSimpleProgressBar(cmd.ErrOrStderr())
+				sources, err = collectSourcesWithProgress(d.Files, src, collectionReporter)
+			} else {
+				sources, err = collectSources(d.Files, src)
+			}
 			if err != nil {
 				return err
 			}
 
 			if atomic {
-				return performTransactionalCopy(d.Files, sources, dstRoot, dryRun, overwrite, cmd)
+				return performTransactionalCopy(d.Files, sources, dstRoot, dryRun, overwrite, showProgress, cmd)
 			}
 
-			// Original non-transactional behavior
-			for _, src := range sources {
-				dst, err := destFromMetadata(d.Files, src, dstRoot)
-				if err != nil {
-					return err
-				}
-
-				if dryRun {
-					fmt.Fprintf(cmd.OutOrStdout(), "Would move %s → %s\n", src, dst)
-					continue
-				}
-				if !overwrite {
-					if err := d.Files.ValidateCopyArgs(src, dst); err != nil {
-						return err
-					}
-				}
-				// Move is copy+delete or os.Rename; simplest:
-				if err := d.Files.Copy(src, dst); err != nil {
-					return err
-				}
-			}
-
-			fmt.Printf("Copied %d file(s).\n", len(sources))
-			return nil
+			// Original non-transactional behavior with progress
+			return performNonTransactionalCopy(d.Files, sources, dstRoot, dryRun, overwrite, showProgress, cmd)
 		},
 		// flag definitions added after struct literal
 	}
@@ -120,6 +107,7 @@ func createCopyCmd(d *deps.AppDeps) *cobra.Command {
 	cmd.Flags().Bool("dry-run", false, "Show what would be copied without doing it")
 	cmd.Flags().Bool("overwrite", false, "Allow overwriting existing files in destination")
 	cmd.Flags().Bool("atomic", false, "Perform all-or-nothing copy with rollback on failure")
+	cmd.Flags().Bool("progress", false, "Show progress bar during copy operations")
 	cmd.Flags().Uint("jobs", 1, "Number of concurrent copy workers (currently only 1 is used)")
 
 	return cmd
@@ -138,68 +126,59 @@ func createMoveCmd(d *deps.AppDeps) *cobra.Command {
 			dryRun, _ := cmd.Flags().GetBool("dry-run")
 			overwrite, _ := cmd.Flags().GetBool("overwrite")
 			atomic, _ := cmd.Flags().GetBool("atomic")
+			showProgress, _ := cmd.Flags().GetBool("progress")
 
 			srcAbs, err := filepath.Abs(srcInput)
 			if err != nil {
 				return fmt.Errorf("resolving %q: %w", srcInput, err)
 			}
 
-			sources, err := collectSources(d.Files, srcAbs)
+			var sources []string
+			if showProgress {
+				// Show collection progress
+				collectionReporter := progress.NewSimpleProgressBar(cmd.ErrOrStderr())
+				sources, err = collectSourcesWithProgress(d.Files, srcAbs, collectionReporter)
+			} else {
+				sources, err = collectSources(d.Files, srcAbs)
+			}
 			if err != nil {
 				return err
 			}
 
 			if atomic {
-				return performTransactionalMove(d.Files, sources, dstRoot, dryRun, overwrite, cmd)
+				return performTransactionalMove(d.Files, sources, dstRoot, dryRun, overwrite, showProgress, cmd)
 			}
 
-			// Original non-transactional behavior
-			for _, src := range sources {
-				fmt.Printf("the src: %v+", src)
-				dst, err := destFromMetadata(d.Files, src, dstRoot)
-				if err != nil {
-					return err
-				}
-
-				if dryRun {
-					fmt.Fprintf(cmd.OutOrStdout(), "Would move %s -> %s\n", src, dst)
-					continue
-				}
-				// Validate unless overwrite flag is set
-				if !overwrite {
-					if err := d.Files.ValidateCopyArgs(src, dst); err != nil {
-						return err
-					}
-				}
-				// Ensure destination directory exists
-				if err := d.Files.EnsureDir(filepath.Dir(dst), dirPerm); err != nil {
-					return err
-				}
-				// Perform the move (rename)
-				if err := os.Rename(src, dst); err != nil {
-					return err
-				}
-			}
-
-			fmt.Printf("Moved %d file(s).\n", len(sources))
-			return nil
+			// Original non-transactional behavior with progress
+			return performNonTransactionalMove(d.Files, sources, dstRoot, dryRun, overwrite, showProgress, cmd)
 		},
 	}
 
 	cmd.Flags().Bool("dry-run", false, "Show what would be moved without doing it")
 	cmd.Flags().Bool("overwrite", false, "Allow overwriting existing files in destination")
 	cmd.Flags().Bool("atomic", false, "Perform all-or-nothing move with rollback on failure")
+	cmd.Flags().Bool("progress", false, "Show progress bar during move operations")
 
 	return cmd
 }
 
 // performTransactionalCopy handles atomic copy operations using transactions.
-func performTransactionalCopy(fs files.FilesService, sources []string, dstRoot string, dryRun, overwrite bool, cmd *cobra.Command) error {
+func performTransactionalCopy(fs files.FilesService, sources []string, dstRoot string, dryRun, overwrite, showProgress bool, cmd *cobra.Command) error {
 	// Create a new transaction
 	tx := fs.NewTransaction(overwrite)
 
-	// Plan all operations
-	for _, src := range sources {
+	// Plan all operations with optional progress for metadata extraction
+	var planningReporter progress.ProgressReporter
+	if showProgress {
+		planningReporter = progress.NewSimpleProgressBar(cmd.ErrOrStderr())
+		planningReporter.SetTotal(len(sources))
+		planningReporter.SetMessage("Planning operations")
+	} else {
+		planningReporter = progress.NewNoOpReporter()
+	}
+
+	for i, src := range sources {
+		planningReporter.SetMessage(fmt.Sprintf("Planning copy for %s", src))
 		dst, err := destFromMetadata(fs, src, dstRoot)
 		if err != nil {
 			return err
@@ -208,7 +187,9 @@ func performTransactionalCopy(fs files.FilesService, sources []string, dstRoot s
 		if err := tx.AddCopy(src, dst); err != nil {
 			return err
 		}
+		planningReporter.SetCurrent(i + 1)
 	}
+	planningReporter.Finish()
 
 	// Validate all operations
 	if err := tx.Validate(); err != nil {
@@ -223,22 +204,39 @@ func performTransactionalCopy(fs files.FilesService, sources []string, dstRoot s
 		return nil
 	}
 
-	// Execute the transaction
-	if err := tx.Execute(); err != nil {
-		return err
+	// Execute the transaction with progress if requested
+	if showProgress {
+		reporter := progress.NewSimpleProgressBar(cmd.ErrOrStderr())
+		if err := tx.ExecuteWithProgress(reporter); err != nil {
+			return err
+		}
+	} else {
+		if err := tx.Execute(); err != nil {
+			return err
+		}
 	}
 
-	fmt.Printf("Atomically copied %d file(s).\n", len(sources))
+	fmt.Fprintf(cmd.OutOrStdout(), "Atomically copied %d file(s).\n", len(sources))
 	return nil
 }
 
 // performTransactionalMove handles atomic move operations using transactions.
-func performTransactionalMove(fs files.FilesService, sources []string, dstRoot string, dryRun, overwrite bool, cmd *cobra.Command) error {
+func performTransactionalMove(fs files.FilesService, sources []string, dstRoot string, dryRun, overwrite, showProgress bool, cmd *cobra.Command) error {
 	// Create a new transaction
 	tx := fs.NewTransaction(overwrite)
 
-	// Plan all operations
-	for _, src := range sources {
+	// Plan all operations with optional progress for metadata extraction
+	var planningReporter progress.ProgressReporter
+	if showProgress {
+		planningReporter = progress.NewSimpleProgressBar(cmd.ErrOrStderr())
+		planningReporter.SetTotal(len(sources))
+		planningReporter.SetMessage("Planning operations")
+	} else {
+		planningReporter = progress.NewNoOpReporter()
+	}
+
+	for i, src := range sources {
+		planningReporter.SetMessage(fmt.Sprintf("Planning move for %s", src))
 		dst, err := destFromMetadata(fs, src, dstRoot)
 		if err != nil {
 			return err
@@ -247,7 +245,9 @@ func performTransactionalMove(fs files.FilesService, sources []string, dstRoot s
 		if err := tx.AddMove(src, dst); err != nil {
 			return err
 		}
+		planningReporter.SetCurrent(i + 1)
 	}
+	planningReporter.Finish()
 
 	// Validate all operations
 	if err := tx.Validate(); err != nil {
@@ -262,12 +262,114 @@ func performTransactionalMove(fs files.FilesService, sources []string, dstRoot s
 		return nil
 	}
 
-	// Execute the transaction
-	if err := tx.Execute(); err != nil {
-		return err
+	// Execute the transaction with progress if requested
+	if showProgress {
+		reporter := progress.NewSimpleProgressBar(cmd.ErrOrStderr())
+		if err := tx.ExecuteWithProgress(reporter); err != nil {
+			return err
+		}
+	} else {
+		if err := tx.Execute(); err != nil {
+			return err
+		}
 	}
 
-	fmt.Printf("Atomically moved %d file(s).\n", len(sources))
+	fmt.Fprintf(cmd.OutOrStdout(), "Atomically moved %d file(s).\n", len(sources))
+	return nil
+}
+
+// performNonTransactionalCopy handles non-atomic copy operations with progress reporting.
+func performNonTransactionalCopy(fs files.FilesService, sources []string, dstRoot string, dryRun, overwrite, showProgress bool, cmd *cobra.Command) error {
+	// Create progress reporter based on flag
+	var reporter progress.ProgressReporter
+	if showProgress {
+		reporter = progress.NewSimpleProgressBar(cmd.ErrOrStderr())
+	} else {
+		reporter = progress.NewNoOpReporter()
+	}
+	reporter.SetTotal(len(sources))
+	
+	for i, src := range sources {
+		dst, err := destFromMetadata(fs, src, dstRoot)
+		if err != nil {
+			return err
+		}
+		
+		reporter.SetMessage(fmt.Sprintf("copy %s", src))
+		
+		if dryRun {
+			fmt.Fprintf(cmd.OutOrStdout(), "Would copy %s → %s\n", src, dst)
+			reporter.Increment()
+			continue
+		}
+		
+		if !overwrite {
+			if err := fs.ValidateCopyArgs(src, dst); err != nil {
+				return err
+			}
+		}
+		
+		if err := fs.Copy(src, dst); err != nil {
+			reporter.SetError(err)
+			return err
+		}
+		
+		reporter.SetCurrent(i + 1)
+	}
+	
+	reporter.Finish()
+	fmt.Fprintf(cmd.OutOrStdout(), "Copied %d file(s).\n", len(sources))
+	return nil
+}
+
+// performNonTransactionalMove handles non-atomic move operations with progress reporting.
+func performNonTransactionalMove(fs files.FilesService, sources []string, dstRoot string, dryRun, overwrite, showProgress bool, cmd *cobra.Command) error {
+	// Create progress reporter based on flag
+	var reporter progress.ProgressReporter
+	if showProgress {
+		reporter = progress.NewSimpleProgressBar(cmd.ErrOrStderr())
+	} else {
+		reporter = progress.NewNoOpReporter()
+	}
+	reporter.SetTotal(len(sources))
+	
+	for i, src := range sources {
+		dst, err := destFromMetadata(fs, src, dstRoot)
+		if err != nil {
+			return err
+		}
+		
+		reporter.SetMessage(fmt.Sprintf("move %s", src))
+		
+		if dryRun {
+			fmt.Fprintf(cmd.OutOrStdout(), "Would move %s → %s\n", src, dst)
+			reporter.Increment()
+			continue
+		}
+		
+		// Validate unless overwrite flag is set
+		if !overwrite {
+			if err := fs.ValidateCopyArgs(src, dst); err != nil {
+				return err
+			}
+		}
+		
+		// Ensure destination directory exists
+		if err := fs.EnsureDir(filepath.Dir(dst), dirPerm); err != nil {
+			return err
+		}
+		
+		// Perform the move (rename)
+		if err := os.Rename(src, dst); err != nil {
+			reporter.SetError(err)
+			return err
+		}
+		
+		reporter.SetCurrent(i + 1)
+	}
+	
+	reporter.Finish()
+	fmt.Fprintf(cmd.OutOrStdout(), "Moved %d file(s).\n", len(sources))
 	return nil
 }
 

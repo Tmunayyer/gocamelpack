@@ -384,7 +384,7 @@ func TestCopyCmd_DryRun(t *testing.T) {
 
 	// Verify output mentions what would be done
 	output := out.String()
-	if !contains(output, "Would move") {
+	if !contains(output, "Would copy") {
 		t.Errorf("expected dry-run output, got: %s", output)
 	} else {
 		// If it printed the dry-run message, no files should be copied

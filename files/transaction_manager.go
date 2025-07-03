@@ -1,6 +1,10 @@
 package files
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/Tmunayyer/gocamelpack/progress"
+)
 
 // FileTransaction implements the Transaction interface.
 type FileTransaction struct {
@@ -62,11 +66,25 @@ func (ft *FileTransaction) Validate() error {
 }
 
 func (ft *FileTransaction) Execute() error {
+	return ft.ExecuteWithProgress(progress.NewNoOpReporter())
+}
+
+func (ft *FileTransaction) ExecuteWithProgress(reporter progress.ProgressReporter) error {
 	// Reset completed operations
 	ft.completed = ft.completed[:0]
 	
-	for _, op := range ft.operations {
+	// Set up progress tracking
+	reporter.SetTotal(len(ft.operations))
+	reporter.SetCurrent(0)
+	
+	for i, op := range ft.operations {
+		// Update progress message
+		reporter.SetMessage(fmt.Sprintf("%s %s", op.Type(), op.Source()))
+		
 		if err := op.Execute(ft.fs); err != nil {
+			// Report error to progress before attempting rollback
+			reporter.SetError(err)
+			
 			// Execution failed, rollback completed operations
 			rollbackErr := ft.Rollback()
 			if rollbackErr != nil {
@@ -83,9 +101,15 @@ func (ft *FileTransaction) Execute() error {
 				Err:       err,
 			}
 		}
+		
 		ft.completed = append(ft.completed, op)
+		
+		// Update progress
+		reporter.SetCurrent(i + 1)
 	}
 	
+	// Mark as finished
+	reporter.Finish()
 	return nil
 }
 
