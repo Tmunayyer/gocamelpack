@@ -82,6 +82,9 @@ func (ft *FileTransaction) ExecuteWithProgress(reporter progress.ProgressReporte
 		reporter.SetMessage(fmt.Sprintf("%s %s", op.Type(), op.Source()))
 		
 		if err := op.Execute(ft.fs); err != nil {
+			// Report error to progress before attempting rollback
+			reporter.SetError(err)
+			
 			// Execution failed, rollback completed operations
 			rollbackErr := ft.Rollback()
 			if rollbackErr != nil {

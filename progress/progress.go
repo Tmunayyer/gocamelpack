@@ -25,6 +25,9 @@ type ProgressReporter interface {
 	// Finish marks the progress as complete and performs any cleanup
 	Finish()
 	
+	// SetError marks the progress as errored and displays error state
+	SetError(err error)
+	
 	// IsComplete returns true if progress is complete
 	IsComplete() bool
 	
@@ -48,6 +51,7 @@ func (n *NoOpReporter) IncrementBy(amount int)    {}
 func (n *NoOpReporter) SetCurrent(current int)    {}
 func (n *NoOpReporter) SetMessage(message string) {}
 func (n *NoOpReporter) Finish()                   {}
+func (n *NoOpReporter) SetError(err error)        {}
 func (n *NoOpReporter) IsComplete() bool          { return false }
 func (n *NoOpReporter) Current() int              { return 0 }
 func (n *NoOpReporter) Total() int                { return 0 }

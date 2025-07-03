@@ -14,6 +14,7 @@ type ProgressBar struct {
 	emptyChar rune
 	showMsg   bool
 	finished  bool
+	errored   bool
 }
 
 // NewProgressBar creates a new progress bar with the specified width and output writer.
@@ -60,8 +61,8 @@ func (pb *ProgressBar) SetWidth(width int) {
 
 // Render returns the current progress bar as a string without printing it.
 func (pb *ProgressBar) Render() string {
-	if pb.finished {
-		return "" // Don't render after finish
+	if pb.finished || pb.errored {
+		return "" // Don't render after finish or error
 	}
 	
 	var result strings.Builder
@@ -105,7 +106,7 @@ func (pb *ProgressBar) Render() string {
 
 // Display renders and prints the progress bar to the configured writer.
 func (pb *ProgressBar) Display() {
-	if pb.finished {
+	if pb.finished || pb.errored {
 		return
 	}
 	
@@ -152,30 +153,101 @@ func (pb *ProgressBar) Finish() {
 
 // Increment increases progress by 1 and updates the display.
 func (pb *ProgressBar) Increment() {
+	if pb.errored || pb.finished {
+		return
+	}
 	pb.ProgressState.Increment()
 	pb.Update()
 }
 
 // IncrementBy increases progress by the specified amount and updates the display.
 func (pb *ProgressBar) IncrementBy(amount int) {
+	if pb.errored || pb.finished {
+		return
+	}
 	pb.ProgressState.IncrementBy(amount)
 	pb.Update()
 }
 
 // SetCurrent sets the current progress and updates the display.
 func (pb *ProgressBar) SetCurrent(current int) {
+	if pb.errored || pb.finished {
+		return
+	}
 	pb.ProgressState.SetCurrent(current)
 	pb.Update()
 }
 
 // SetTotal sets the total and updates the display.
 func (pb *ProgressBar) SetTotal(total int) {
+	if pb.errored || pb.finished {
+		return
+	}
 	pb.ProgressState.SetTotal(total)
 	pb.Update()
 }
 
 // SetMessage sets the message and updates the display.
 func (pb *ProgressBar) SetMessage(message string) {
+	if pb.errored || pb.finished {
+		return
+	}
 	pb.ProgressState.SetMessage(message)
 	pb.Update()
+}
+
+// SetError marks the progress bar as errored and displays an error state.
+func (pb *ProgressBar) SetError(err error) {
+	if pb.finished {
+		return
+	}
+	
+	pb.errored = true
+	pb.finished = true
+	
+	// Show error state
+	var result strings.Builder
+	
+	// Build error bar - show current progress with error indicator
+	result.WriteRune('[')
+	
+	var filledWidth int
+	if pb.total > 0 {
+		filledWidth = int(float64(pb.current) / float64(pb.total) * float64(pb.width))
+	}
+	if filledWidth > pb.width {
+		filledWidth = pb.width
+	}
+	
+	// Filled portion
+	for i := 0; i < filledWidth; i++ {
+		result.WriteRune(pb.barChar)
+	}
+	
+	// Empty portion
+	for i := filledWidth; i < pb.width; i++ {
+		result.WriteRune(pb.emptyChar)
+	}
+	
+	result.WriteRune(']')
+	
+	// Add current stats
+	result.WriteString(fmt.Sprintf(" %s", pb.String()))
+	
+	if pb.showMsg && pb.message != "" {
+		result.WriteString(fmt.Sprintf(" - %s", pb.message))
+	}
+	
+	result.WriteString(" ✗") // Error mark
+	if err != nil {
+		result.WriteString(fmt.Sprintf(" - Error: %s", err.Error()))
+	}
+	result.WriteString("\n")
+	
+	fmt.Fprint(pb.writer, "\r"+result.String())
+}
+
+// IsErrored returns true if the progress bar is in an error state.
+func (pb *ProgressBar) IsErrored() bool {
+	return pb.errored
 }

@@ -310,6 +310,7 @@ func performNonTransactionalCopy(fs files.FilesService, sources []string, dstRoo
 		}
 		
 		if err := fs.Copy(src, dst); err != nil {
+			reporter.SetError(err)
 			return err
 		}
 		
@@ -360,6 +361,7 @@ func performNonTransactionalMove(fs files.FilesService, sources []string, dstRoo
 		
 		// Perform the move (rename)
 		if err := os.Rename(src, dst); err != nil {
+			reporter.SetError(err)
 			return err
 		}
 		

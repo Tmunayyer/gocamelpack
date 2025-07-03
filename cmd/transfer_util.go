@@ -34,6 +34,7 @@ func collectSourcesWithProgress(fs files.FilesService, userPath string, reporter
 		reporter.SetMessage("Reading directory")
 		entries, err := fs.ReadDirectory(abs)
 		if err != nil {
+			reporter.SetError(err)
 			return nil, err
 		}
 		

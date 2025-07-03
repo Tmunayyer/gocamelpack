@@ -16,6 +16,7 @@ type mockProgressReporter struct {
 	current     int
 	messages    []string
 	finished    bool
+	errored     bool
 	increments  int
 }
 
@@ -49,6 +50,11 @@ func (m *mockProgressReporter) SetMessage(message string) {
 
 func (m *mockProgressReporter) Finish() {
 	m.finished = true
+}
+
+func (m *mockProgressReporter) SetError(err error) {
+	// For mock purposes, mark as errored but not finished
+	m.errored = true
 }
 
 func (m *mockProgressReporter) IsComplete() bool {
